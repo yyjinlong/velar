@@ -1,0 +1,8 @@
+*.pyc
+*.egg-info/
+*.eggs/
+*.un~
+*.DS_Store
+.venv/
+.tox/
+
