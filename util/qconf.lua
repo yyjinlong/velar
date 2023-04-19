@@ -71,7 +71,7 @@ if ret ~= 0 then
 end
 
 -- qconf interned buff
--- Lua string is an (interned) copy of the data and bears no relation to the original data area anymore. 
+-- Lua string is an (interned) copy of the data and bears no relation to the original data area anymore.
 -- http://luajit.org/ext_ffi_api.html#ffi_string
 local buff = ffi.new("char[?]", qconf_conf_buf_max_len, {0})
 
