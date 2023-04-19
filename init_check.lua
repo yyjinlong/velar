@@ -6,16 +6,19 @@ local json = require 'cjson'
 function check_one(upstream_name, data)
     local config = json.decode(data)
     if config == nil then
-        error('upstream: ' .. upstream_name .. 'get conf data not json')
+        error('upstream: ' .. upstream_name .. ' get conf data not json')
     end
     if type(config.service_route_rule) ~= 'table' or type(config.service_instances) ~= 'table' then
-        error('upstream: ' .. upstream_name .. 'config error!')
+        error('upstream: ' .. upstream_name .. ' config error!')
     end
     if #config.service_route_rule.route == 0 then
-        error('upstream: ' .. upstream_name .. 'route rule is empty!')
+        error('upstream: ' .. upstream_name .. ' route rule is empty!')
     end
     if #config.service_instances == 0 then
-        error('upstream: ' .. upstream_name .. 'no instance!')
+        error('upstream: ' .. upstream_name .. ' no instance!')
+    end
+    if type(config.service_connect_retry) == 'nil' then
+        error('upstream: ' .. upstream_name .. ' connect retry count is empty!')
     end
 end
 
