@@ -27,7 +27,8 @@ function _M:check()
     for _, upstream_name in pairs(upstream_list) do
         if string.sub(upstream_name, 1, 6) == 'nginx.' then
             local path, _ = string.gsub(upstream_name, '[.]', '/')
-            local err, conf = qconf.get_conf(path)
+            local conf_key = '/' .. path
+            local err, conf = qconf.get_conf(conf_key)
             if err ~= 0 then
                 ngx.log(ngx.ERR, 'upstream: ' .. upstream_name ..' qconf get conf ' .. path ..' error: ', err)
                 return ''

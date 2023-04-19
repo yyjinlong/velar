@@ -50,7 +50,7 @@ end
 local function filter(upstream_name, pubenv, idc, abclass)
 	--
 	-- 根据路由标签顺序逐层匹配
-	-- 数量为1, 停止过滤; 数量为0, 返回上层结果;
+	-- 数量为1, 停止过滤; 数量为0, 返回上层结果
     -- 标签值不匹配, 则采用default
 	-- 最终结果可以是1个或多个
 	--
