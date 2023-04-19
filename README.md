@@ -26,15 +26,15 @@ Jinlong Yang
 	http {
 		....
 		lua_shared_dict store 100m;
-
+		
 		init_by_lua_block {
-            local init = require 'velar.init_check'
-            init.check()
+			local init = require 'velar.init_check'
+			init.check()
 		}
-
+		
 		init_worker_by_lua_block {
-            local init = require 'velar.init_timer'
-            init.timer()
+			local init = require 'velar.init_timer'
+			init.timer()
 		}
 		....
 	}
