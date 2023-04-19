@@ -16,42 +16,42 @@ global_upstream_wrr_dict = {}
 
 local function update_route(upstream_name, route_priorities, route_rule, instances)
     --[[
-		"route": [
-		  "idc"
-		],
-		"route_rule": {
-		  "idc": {
-		    "dx": "dx",
-		    "m6": "m6",
-		    "default": "dx"
-		  }
-		}
+        "route": [
+          "idc"
+        ],
+        "route_rule": {
+          "idc": {
+            "dx": "dx",
+            "m6": "m6",
+            "default": "dx"
+          }
+        }
     --]]
-	-- 按优先级进行遍历
-	for _, route in pairs(route_priorities) do
+    -- 按优先级进行遍历
+    for _, route in pairs(route_priorities) do
         ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' cache rule route: ', route)
-		-- 遍历该规则
+        -- 遍历该规则
         local rule_map = route_rule[route]
-		for tag, val in pairs(rule_map) do
-			-- 遍历实例, 匹配规则标签
-		    local match_instance = {}
-			for i=1, #instances do
+        for tag, val in pairs(rule_map) do
+            -- 遍历实例, 匹配规则标签
+            local match_instance = {}
+            for i=1, #instances do
                 -- pubenv是default情况下, 需要包含小流量机器
                 if route == 'pubenv' and tag == 'default' then
                     if instances[i][route] ~= 'sandbox' then
-					    table.insert(match_instance, instances[i])
+                        table.insert(match_instance, instances[i])
                     end
-				elseif instances[i][route] == val then
-					table.insert(match_instance, instances[i])
-				end
-			end
+                elseif instances[i][route] == val then
+                    table.insert(match_instance, instances[i])
+                end
+            end
 
             local key = global_instance_prefix .. upstream_name .. '_' .. route .. '_' .. tag
             local val = json.encode(match_instance)
             store:safe_set(key, val)
-			ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' update route key: '..key)
-			ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' update route val: '..val)
-		end
+            ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' update route key: '..key)
+            ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' update route val: '..val)
+        end
     end
 end
 
@@ -105,12 +105,12 @@ local function update_one(upstream_name, data)
     store:safe_set(retry_key, tostring(config.service_connect_retry))
     ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' update service retry finish')
 
-	-- (5) 存储路由规则
+    -- (5) 存储路由规则
     local route_config = config.service_route_rule
     local route_priorities = route_config.route
-	local route_rule = route_config.route_rule
-	update_route(upstream_name, route_priorities, route_rule, instances)
-	ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' update route rule finish')
+    local route_rule = route_config.route_rule
+    update_route(upstream_name, route_priorities, route_rule, instances)
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' update route rule finish')
 end
 
 local _M = {}

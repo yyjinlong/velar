@@ -37,7 +37,7 @@ local function get_instances_by_prev_filter(route, tag, prev_instances)
 end
 
 local function get_instances_by_route_tag_cache(upstream_name, route, tag)
-	local instance_key = global_instance_prefix .. upstream_name .. '_' .. route .. '_' .. tag
+    local instance_key = global_instance_prefix .. upstream_name .. '_' .. route .. '_' .. tag
     local instance_val = store:get(instance_key)
     ngx.log(ngx.DEBUG, '-------instance key: ' .. instance_key)
     if instance_val == nil then
@@ -48,12 +48,12 @@ local function get_instances_by_route_tag_cache(upstream_name, route, tag)
 end
 
 local function filter(upstream_name, pubenv, idc, abclass)
-	--
-	-- 根据路由标签顺序逐层匹配
-	-- 数量为1, 停止过滤; 数量为0, 返回上层结果
+    --
+    -- 根据路由标签顺序逐层匹配
+    -- 数量为1, 停止过滤; 数量为0, 返回上层结果
     -- 标签值不匹配, 则采用default
-	-- 最终结果可以是1个或多个
-	--
+    -- 最终结果可以是1个或多个
+    --
     local instance_key = global_instance_prefix .. upstream_name
     local instance_val = store:get(instance_key)
     local instances = json.decode(instance_val)
@@ -113,35 +113,35 @@ local function filter(upstream_name, pubenv, idc, abclass)
 end
 
 local function router()
-	--
-	-- 路由规则: pubenv->idc->abclass
-	--
+    --
+    -- 路由规则: pubenv->idc->abclass
+    --
 
-	-- pubenv: 1(sandbox) 2(smallflow) default(default)
-	local pubenv = ngx.req.get_headers()['x-pubenv']
-	if type(pubenv) == 'nil' then
-		pubenv = 'default'
-	end
+    -- pubenv: 1(sandbox) 2(smallflow) default(default)
+    local pubenv = ngx.req.get_headers()['x-pubenv']
+    if type(pubenv) == 'nil' then
+        pubenv = 'default'
+    end
 
-	-- idc
-	local idc = ngx.req.get_headers()['x-idc']
-	if type(idc) == 'nil' then
-		idc = 'all'
-	end
+    -- idc
+    local idc = ngx.req.get_headers()['x-idc']
+    if type(idc) == 'nil' then
+        idc = 'all'
+    end
 
-	-- abclass
+    -- abclass
     local abclass = 'default'
-	local abclass_val = ngx.var.cookie_abclass
-	if abclass_val ~= nil then
-		local segments = util.split(abclass_val, '_')	
-		abclass = tonumber(segments[2])
-	end
+    local abclass_val = ngx.var.cookie_abclass
+    if abclass_val ~= nil then
+        local segments = util.split(abclass_val, '_')
+        abclass = tonumber(segments[2])
+    end
     ngx.log(ngx.DEBUG, 'request abclass: ' .. abclass)
 
     local upstream_name = upstream.current_upstream_name()
     local instances = filter(upstream_name, pubenv, idc, abclass)
     local select_instances = wrr(upstream_name, instances)
-	ngx.log(ngx.DEBUG, 'select instance: ' .. util.dump(select_instances))
+    ngx.log(ngx.DEBUG, 'select instance: ' .. util.dump(select_instances))
 
     -- retry
     local retry_key = global_retry_prefixy .. upstream_name
