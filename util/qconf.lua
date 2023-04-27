@@ -77,7 +77,9 @@ local buff = ffi.new("char[?]", qconf_conf_buf_max_len, {0})
 
 -- qconf get_conf function
 local function get_conf(key, idc)
-    local ret = qconf.qconf_get_conf(key, buff, qconf_conf_buf_max_len, idc)
+    --local ret = qconf.qconf_get_conf(key, buff, qconf_conf_buf_max_len, idc)
+    -- 异步获取配置
+    local ret = qconf.qconf_aget_conf(key, buff, qconf_conf_buf_max_len, idc)
 
     if ret == 0 then
         return ret, ffi.string(buff)

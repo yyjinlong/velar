@@ -50,9 +50,15 @@ Jinlong Yang
 			├── qconf.lua
 			└── util.lua
 
-    init_by_lua: nginx启动时, 从qconf读取所有配置, 进行配置检查
-    init_worker_by_lua: 启动定时器, 每秒从qconf获取变化的配置, 解析路由规则, 将每一组路由对应的实例信息事先写入共享内存
-    balancer_by_lua_file: 获取当前访问的upstream、idc、pubenv、abclass, 从共享内存获取实例信息, 进行路由逐层匹配, 最后经过wrr返回最终的实例
+    init_by_lua:
+    * nginx启动时, 从qconf读取所有配置, 进行配置检查
+
+    init_worker_by_lua:
+    * 启动定时器, 每秒从qconf获取变化的配置, 解析路由规则, 通过排列组合, 穷举每种规则, 匹配得到对应规则的实例信息，使其【事先】写入到nginx共享内存。
+    * 这样做的好处: 在定时器中, 已经将名字服务路由规则中的各种匹配规则都写入共享内存, 当upstream被访问的时候, 可直接匹配规则, 从共享内存获取实例. 以达到静态配置upstream时的访问速度, 提升性能。
+
+    balancer_by_lua_file:
+    * 获取当前访问的upstream、idc、pubenv、abclass, 从共享内存获取实例信息, 进行路由逐层匹配, 最后经过wrr返回最终的实例
 
 
 ## 5 qconf zk配置

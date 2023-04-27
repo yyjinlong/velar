@@ -1,3 +1,5 @@
+local json = require 'cjson'
+
 local _M = {}
 
 _M.split = function(str, delimiter)
@@ -14,16 +16,15 @@ end
 
 
 _M.dump = function(obj)
-    if type(obj) == 'table' then
-        local s = '{ '
-        for k,v in pairs(obj) do
-            if type(k) ~= 'number' then k = '"'..k..'"' end
-            s = s .. '['..k..'] = ' .. _M.dump(v) .. ','
-        end
-        return s .. '} '
-    else
-        return tostring(obj)
+    return json.encode(obj)
+end
+
+
+_M.gcd = function(a, b)
+    while b ~= 0 do
+        a, b = b, a % b
     end
+    return a
 end
 
 return _M

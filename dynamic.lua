@@ -4,155 +4,148 @@ local util = require 'velar.util.util'
 local json = require 'cjson'
 local store = ngx.shared.store
 
--- 加权轮训算法: (注: 目前只实现rr)
-local function wrr(upstream_name, instances)
-    if #instances == 1 then
-        return instances
-    end
 
-    local selected = {}
-    local count = #instances
-    local last = global_upstream_wrr_dict[upstream_name]
-    if last == nil then
-        last = count - 1
-    end
-
-    local current = (last + 1) % count
-    ngx.log(ngx.DEBUG, 'round robin get access current: ', current)
-    table.insert(selected, instances[current + 1]) -- 注: lua索引从1开始
-
-    global_upstream_wrr_dict[upstream_name] = current
-    return selected
-end
-
-local function get_instances_by_prev_filter(route, tag, prev_instances)
-    local match_instance = {}
-    for _, item in pairs(prev_instances) do
-        if item[route] == tag then
-            table.insert(match_instance, item)
-        end
-    end
-    ngx.log(ngx.DEBUG, 'get instances by prev: '..util.dump(match_instance))
-    return match_instance
-end
-
-local function get_instances_by_route_tag_cache(upstream_name, route, tag)
-    local instance_key = global_instance_prefix .. upstream_name .. '_' .. route .. '_' .. tag
-    local instance_val = store:get(instance_key)
-    ngx.log(ngx.DEBUG, '-------instance key: ' .. instance_key)
-    if instance_val == nil then
-        return {}
-    end
-    ngx.log(ngx.DEBUG, '-------instance val: ' .. instance_val)
-    return json.decode(instance_val)
-end
-
-local function filter(upstream_name, pubenv, idc, abclass)
+local function slow_match(upstream_name, route_priorities, access_info)
     --
     -- 根据路由标签顺序逐层匹配
     -- 数量为1, 停止过滤; 数量为0, 返回上层结果
     -- 标签值不匹配, 则采用default
     -- 最终结果可以是1个或多个
     --
-    local instance_key = global_instance_prefix .. upstream_name
-    local instance_val = store:get(instance_key)
-    local instances = json.decode(instance_val)
+    local prefix = global_instance_prefix .. upstream_name
+    local all_instance_val = store:get(prefix)
+    local instances = json.decode(all_instance_val)
 
-    local route_key = global_route_prefix .. upstream_name
-    local route_val = store:get(route_key)
-    local route_config = json.decode(route_val)
-    local route_priorities = route_config.route
-    local route_rule = route_config.route_rule
-
-    local prev_instances = instances
     local next_instances = {}
     for _, route in pairs(route_priorities) do
-        if route == 'pubenv' then
-            if #next_instances == 0 then
-                next_instances = get_instances_by_route_tag_cache(upstream_name, route, pubenv)
-            else
-                next_instances = get_instances_by_prev_filter(route, pubenv, prev_instances)
-            end
+        local next_prefix = prefix .. '_' .. route .. '_' .. access_info[route]
+        ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' slow match prefix: ' .. next_prefix)
 
-        elseif route == 'idc' then
-            if #next_instances == 0 then
-                next_instances = get_instances_by_route_tag_cache(upstream_name, route, idc)
-            else
-                next_instances = get_instances_by_prev_filter(route, idc, prev_instances)
-            end
-
-        elseif route == 'abclass' then
-            local find_ab_prefix = 'default'
-            for range, val in pairs(route_rule[route]) do
-                local segments = util.split(range, '-')
-                if segments and #segments == 2 then
-                    local low = tonumber(segments[1])
-                    local high = tonumber(segments[2])
-                    if type(abclass) == 'number' and abclass >= low and abclass <= high then
-                        find_ab_prefix = val
-                    end
-                end
-            end
-            ngx.log(ngx.INFO, 'upstream: ' .. upstream_name .. ' find abclass prefix: ' .. find_ab_prefix)
-            if #next_instances == 0 then
-                next_instances = get_instances_by_route_tag_cache(upstream_name, route, find_ab_prefix)
-            else
-                next_instances = get_instances_by_prev_filter(route, find_ab_prefix, prev_instances)
-            end
+        local instance_msg = store:get(next_prefix)
+        if not instance_msg then
+            break
         end
-
-        if #next_instances == 1 then
-            return next_instances
-        elseif #next_instances == 0 then
-            return prev_instances
+        next_instances = json.decode(instance_msg)
+        if #next_instances > 0 then
+            prefix = next_prefix
+            instances = next_instances
         else
-            prev_instances = next_instances
+            break
         end
     end
-    return next_instances
+    return instances, prefix
+end
+
+local function quick_match(upstream_name, route_priorities, access_info)
+    -- get access prefix
+    local prefix = global_instance_prefix .. upstream_name
+    for _, route in pairs(route_priorities) do
+        local next_prefix = prefix .. '_' .. route .. '_' .. access_info[route]
+        prefix = next_prefix
+    end
+    ngx.log(ngx.DEBUG, 'upstream: ' .. ' quick match get prefix: ' .. prefix)
+
+    local instance_val = store:get(prefix)
+    if instance_val == nil then
+        return {}, prefix
+    end
+    ngx.log(ngx.DEBUG, 'upstream: ' .. ' instance val: ' .. instance_val)
+    return json.decode(instance_val), prefix
 end
 
 local function router()
-    --
-    -- 路由规则: pubenv->idc->abclass
-    --
+    local access_info = {}
+    local upstream_name = upstream.current_upstream_name()
 
-    -- pubenv: 1(sandbox) 2(smallflow) default(default)
     local pubenv = ngx.req.get_headers()['x-pubenv']
     if type(pubenv) == 'nil' then
         pubenv = 'default'
     end
+    access_info['pubenv'] = pubenv
 
-    -- idc
     local idc = ngx.req.get_headers()['x-idc']
     if type(idc) == 'nil' then
         idc = 'all'
     end
+    access_info['idc'] = idc
 
-    -- abclass
     local abclass = 'default'
-    local abclass_val = ngx.var.cookie_abclass
-    if abclass_val ~= nil then
-        local segments = util.split(abclass_val, '_')
-        abclass = tonumber(segments[2])
-    end
-    ngx.log(ngx.DEBUG, 'request abclass: ' .. abclass)
+    local cookie_abclass = ngx.var.cookie_abclass
+    if cookie_abclass ~= nil then
+        local segments = util.split(cookie_abclass, '_')
+        local abclass_val = tonumber(segments[2])
 
-    local upstream_name = upstream.current_upstream_name()
-    local instances = filter(upstream_name, pubenv, idc, abclass)
-    local select_instances = wrr(upstream_name, instances)
-    ngx.log(ngx.DEBUG, 'select instance: ' .. util.dump(select_instances))
+        local route_abclass_key = global_route_abclass_prefix .. upstream_name
+        local route_abclass_msg = store:get(route_abclass_key)
+        if route_abclass_msg ~= nil then
+            local abclass_rule = json.decode(route_abclass_msg)
+            for range, val in pairs(abclass_rule) do
+                local segments = util.split(range, '-')
+                if segments and #segments == 2 then
+                    local low = tonumber(segments[1])
+                    local high = tonumber(segments[2])
+                    if abclass_val >= low and abclass_val <= high then
+                        abclass = range
+                    end
+                end
+            end
+        end
+    end
+    access_info['abclass'] = abclass
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' request abclass: ' .. abclass)
+
+    local route_list_key = global_route_list_prefix .. upstream_name
+    local route_list_msg = store:get(route_list_key)
+    local route_priorities = json.decode(route_list_msg)
+    local instances, prefix = quick_match(upstream_name, route_priorities, access_info)
+    if #instances == 0 then
+        instances, prefix = slow_match(upstream_name, route_priorities, access_info)
+    end
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' get match instance: ' .. util.dump(instances))
 
     -- retry
-    local retry_key = global_retry_prefixy .. upstream_name
+    local retry_key = global_retry_prefix .. upstream_name
     local retry_val = store:get(retry_key)
     balancer.set_more_tries(tonumber(retry_val))
 
-    for _, item in pairs(select_instances) do
-        local ok, err = balancer.set_current_peer(item.ip, item.port)
-        if not ok then
-            ngx.log(ngx.ERR, 'upstream failed to set current peer: ', err)
+    local gcd_key = global_gcd_prefix .. upstream_name
+    local gcd_val = store:get(gcd_key)
+
+    -- wrr
+    local offset = gcd_val -- 最大公约数作为偏移量
+    local sum_weight = 0   -- 累加所有服务的权重
+    local current_weight = global_upstream_wrr_dict[prefix] -- 当前请求的权重
+    if not current_weight then
+        current_weight = 0
+    end
+
+    for i, item in pairs(instances) do
+        sum_weight = sum_weight + item.weight
+        if current_weight < sum_weight then
+            -- 选中
+            local ok, err = balancer.set_current_peer(item.ip, item.port)
+            if not ok then
+                ngx.log(ngx.ERR, 'upstream failed to set current peer: ', err)
+            end
+            ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' select instance: ' .. item.ip)
+
+            current_weight = current_weight + offset
+            if i == #instances and current_weight == sum_weight then
+                current_weight = 0
+            end
+            global_upstream_wrr_dict[prefix] = current_weight
+            return
         end
+    end
+
+    -- 兜底(wrr没有匹配上)
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' wrr no selected instance!!!!')
+    math.randomseed(tostring(os.time()):reverse():sub(1,6))
+    local index = math.random(1, 2)
+    local random_instance = instances[index]
+    local ok, err = balancer.set_current_peer(random_instance.ip, random_instance.port)
+    if not ok then
+        ngx.log(ngx.ERR, 'upstream failed to set current peer: ', err)
     end
 end
 
