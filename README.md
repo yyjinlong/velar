@@ -92,3 +92,30 @@ Jinlong Yang
 	if __name__ == '__main__':
 		run_simple('0.0.0.0', 5000, app) 
 
+## 8 平滑加权轮训算法
+
+    -- 初始全局变量保存请求
+    upstream_wrr_dict = {}
+
+    function wrr()
+        local offset = gcd_val -- 最大公约数作为偏移量
+        local sum_weight = 0   -- 累加所有服务器的权重
+        local current_weight = upstream_wrr_dict[prefix] -- 当前请求的权限值
+        if not current_weight then
+            current_weight = 0
+        end
+
+        for i, item in pairs(instances) do
+            sum_weight = sum_weight + item.weight -- 累加所有权重
+            if current_weight < sum_weight then
+                print('当前请求机器: ' .. item.ip)
+
+                current_weight = current_weight + offset
+                if i == #instances and current_weight == sum_weight then
+                    current_weight = 0
+                end
+                upstream_wrr_dict[prefix] = current_weight
+                return
+            end
+        end
+    end
