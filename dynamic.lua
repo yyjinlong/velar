@@ -65,7 +65,7 @@ local function router()
 
     local idc = ngx.req.get_headers()['x-idc']
     if type(idc) == 'nil' then
-        idc = 'all'
+        idc = 'default'
     end
     access_info['idc'] = idc
 

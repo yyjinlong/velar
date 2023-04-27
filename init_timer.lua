@@ -99,7 +99,7 @@ local function update_one(upstream_name, data)
 
     -- 存储全量实例信息、最大公约数
     local instances = {}
-	local gcd_val = config.service_instances[1].weight
+    local gcd_val = config.service_instances[1].weight
     for _, item in pairs(config.service_instances) do
         if tonumber(item.port) == nil then
             item.port = config.service_default_port
