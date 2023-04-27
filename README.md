@@ -100,7 +100,7 @@ Jinlong Yang
     function wrr()
         local offset = gcd_val -- 最大公约数作为偏移量
         local sum_weight = 0   -- 累加所有服务器的权重
-        local current_weight = upstream_wrr_dict[prefix] -- 当前请求的权限值
+        local current_weight = upstream_wrr_dict[prefix] -- 当前请求的权重值
         if not current_weight then
             current_weight = 0
         end
