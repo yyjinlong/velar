@@ -5,6 +5,43 @@ local json = require 'cjson'
 local store = ngx.shared.store
 
 
+-- smooth weighted round robin
+local function swrr(instances, prefix)
+    for _, item in pairs(instances) do
+        local key = prefix .. '_' .. item.ip
+        local current_weight = global_upstream_wrr_dict[key]
+        if not current_weight then
+            current_weight = 0
+        end
+        item.current_weight = current_weight
+    end
+
+    local sum_weight = 0
+    local index = 0
+    for i=1, #instances do
+        instances[i].current_weight = instances[i].current_weight + instances[i].weight
+        sum_weight = sum_weight + instances[i].weight
+
+        if index == 0 or instances[index].current_weight < instances[i].current_weight then
+            index = i
+        end
+
+        local key = prefix .. '_' .. instances[i].ip
+        global_upstream_wrr_dict[key] = instances[i].current_weight
+    end
+
+    local ip = instances[index].ip
+    local key = prefix .. '_' .. ip
+    global_upstream_wrr_dict[key] = global_upstream_wrr_dict[key] - sum_weight
+
+    local ok, err = balancer.set_current_peer(ip, instances[index].port)
+    if not ok then
+        ngx.log(ngx.ERR, 'upstream failed to set current peer: ', err)
+    end
+    ngx.log(ngx.DEBUG, 'smooth weighted round robin select: ' .. ip)
+end
+
+
 local function slow_match(upstream_name, route_priorities, access_info)
     --
     -- 根据路由标签顺序逐层匹配
@@ -108,45 +145,8 @@ local function router()
     local retry_val = store:get(retry_key)
     balancer.set_more_tries(tonumber(retry_val))
 
-    local gcd_key = global_gcd_prefix .. upstream_name
-    local gcd_val = store:get(gcd_key)
-
-    -- wrr
-    local offset = gcd_val -- 最大公约数作为偏移量
-    local sum_weight = 0   -- 累加所有服务的权重
-    local current_weight = global_upstream_wrr_dict[prefix] -- 当前请求的权重值
-    if not current_weight then
-        current_weight = 0
-    end
-
-    for i, item in pairs(instances) do
-        sum_weight = sum_weight + item.weight
-        if current_weight < sum_weight then
-            -- 选中
-            local ok, err = balancer.set_current_peer(item.ip, item.port)
-            if not ok then
-                ngx.log(ngx.ERR, 'upstream failed to set current peer: ', err)
-            end
-            ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' select instance: ' .. item.ip)
-
-            current_weight = current_weight + offset
-            if i == #instances and current_weight == sum_weight then
-                current_weight = 0
-            end
-            global_upstream_wrr_dict[prefix] = current_weight
-            return
-        end
-    end
-
-    -- 兜底(wrr没有匹配上)
-    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' wrr no selected instance!!!!')
-    math.randomseed(tostring(os.time()):reverse():sub(1,6))
-    local index = math.random(1, 2)
-    local random_instance = instances[index]
-    local ok, err = balancer.set_current_peer(random_instance.ip, random_instance.port)
-    if not ok then
-        ngx.log(ngx.ERR, 'upstream failed to set current peer: ', err)
-    end
+    -- swrr
+    swrr(instances, prefix)
 end
 
 local function except()

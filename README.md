@@ -63,7 +63,7 @@ Jinlong Yang
 
 ## 5 qconf zk配置
 
-	set /nginx/ops/http/cdc '{"service_name": "com.ops.http.cdc", "service_default_port": "5000", "service_connect_retry": 1, "service_timestamp": 1681819575, "service_route_rule": {"route": ["pubenv", "idc", "abclass"], "route_rule": {"pubenv": {"1": "sandbox", "2": "smallflow", "default": "default"}, "idc": {"dx": "dx", "m6": "m6", "default": "dx"}, "abclass": {"0-10": "seta", "11-100": "setb", "default": "setb"}}}, "service_instances": [{"idc": "dx", "hostname": "dx-ops00.dx", "ip": "10.12.20.189", "port": "", "pubenv": "sandbox", "weight": 100, "abclass": "default"}, {"idc": "m6", "hostname": "dx-ops01.dx", "ip": "10.12.20.41", "port": "", "pubenv": "smallflow", "weight": 100, "abclass": "seta"}, {"idc": "m6", "hostname": "dx-ops02.dx", "ip": "10.12.16.250", "port": "", "pubenv": "default", "weight": 100, "abclass": "setb"}, {"idc": "m6", "hostname": "dx-ops03.dx", "ip": "10.12.25.0", "port": "", "pubenv": "default", "weight": 100, "abclass": "setb"}]}'
+	set /nginx/ops/http/cdc '{"service_name": "com.ops.http.cdc", "service_default_port": "5000", "service_connect_retry": 1, "service_timestamp": 1681819575, "service_route_rule": {"route": ["pubenv", "idc", "abclass"], "route_rule": {"pubenv": {"1": "sandbox", "2": "smallflow", "default": "default"}, "idc": {"dx": "dx", "m6": "m6", "default": "dx"}, "abclass": {"0-10": "seta", "11-100": "setb", "default": "setb"}}}, "service_instances": [{"idc": "dx", "hostname": "dx-ops00.dx", "ip": "10.12.20.189", "port": "", "pubenv": "sandbox", "weight": 1, "abclass": "default"}, {"idc": "m6", "hostname": "dx-ops01.dx", "ip": "10.12.20.41", "port": "", "pubenv": "smallflow", "weight": 1, "abclass": "seta"}, {"idc": "m6", "hostname": "dx-ops02.dx", "ip": "10.12.16.250", "port": "", "pubenv": "default", "weight": 2, "abclass": "setb"}, {"idc": "m6", "hostname": "dx-ops03.dx", "ip": "10.12.25.0", "port": "", "pubenv": "default", "weight": 4, "abclass": "setb"}]}'
 
 ## 6 测试
 
@@ -97,25 +97,32 @@ Jinlong Yang
     -- 初始全局变量保存请求
     upstream_wrr_dict = {}
 
-    function wrr()
-        local offset = gcd_val -- 最大公约数作为偏移量
-        local sum_weight = 0   -- 累加所有服务器的权重
-        local current_weight = upstream_wrr_dict[prefix] -- 当前请求的权重值
-        if not current_weight then
-            current_weight = 0
-        end
+    function swrr()
+        local prefix = 'ngx.ops.http.cdc'
 
-        for i, item in pairs(instances) do
-            sum_weight = sum_weight + item.weight -- 累加所有权重
-            if current_weight < sum_weight then
-                print('当前请求机器: ' .. item.ip)
-
-                current_weight = current_weight + offset
-                if i == #instances and current_weight == sum_weight then
-                    current_weight = 0
-                end
-                upstream_wrr_dict[prefix] = current_weight
-                return
+        for _, item in pairs(instances) do
+            local current_weight = upstream_wrr_dict[item.ip]
+            if not current_weight then
+                current_weight = 0
             end
+            item.current_weight = current_weight
         end
+
+        local sum_weight = 0
+        local index = 0
+        for i=1, #instances do
+            instances[i].current_weight = instances[i].current_weight + instances[i].weight
+            sum_weight = sum_weight + instances[i].weight
+
+            if index == 0 or instances[index].current_weight < instances[i].current_weight then
+                index = i
+            end
+
+            local ip = instances[i].ip
+            upstream_wrr_dict[ip] = instances[i].current_weight
+        end
+
+        local ip = instances[index].ip
+        print('当前请求机器: ' .. ip)
+        upstream_wrr_dict[ip] = upstream_wrr_dict[ip] - sum_weight
     end
