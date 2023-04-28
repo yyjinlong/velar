@@ -98,13 +98,12 @@ Jinlong Yang
     upstream_wrr_dict = {}
 
     function swrr()
-        local prefix = 'ngx.ops.http.cdc'
-
         for _, item in pairs(instances) do
             local current_weight = upstream_wrr_dict[item.ip]
             if not current_weight then
                 current_weight = 0
             end
+            -- 填充current_weight字段
             item.current_weight = current_weight
         end
 
