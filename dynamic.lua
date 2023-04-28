@@ -17,8 +17,8 @@ local function swrr(instances, prefix)
         item.current_weight = current_weight
     end
 
-    local sum_weight = 0
-    local index = 0
+    local index = 0      -- 请求到来选择服务器的索引
+    local sum_weight = 0 -- 累加所有服务器的权重
     for i=1, #instances do
         instances[i].current_weight = instances[i].current_weight + instances[i].weight
         sum_weight = sum_weight + instances[i].weight
@@ -27,6 +27,7 @@ local function swrr(instances, prefix)
             index = i
         end
 
+        -- 记录当前服务器的current_weight
         local key = prefix .. '_' .. instances[i].ip
         global_upstream_wrr_dict[key] = instances[i].current_weight
     end
