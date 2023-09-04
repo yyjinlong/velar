@@ -170,7 +170,7 @@ function _M:update()
             end
         end
     end,
-    function()
+    function(err)
         ngx.log(ngx.ERR, debug.traceback())
     end)
 
