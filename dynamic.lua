@@ -9,7 +9,7 @@ local store = ngx.shared.store
 local function swrr(instances, prefix)
     for _, item in pairs(instances) do
         local key = prefix .. '_' .. item.ip
-        local current_weight = global_upstream_wrr_dict[key]
+        local current_weight = store:get(key)
         if not current_weight then
             current_weight = 0
         end
@@ -29,12 +29,13 @@ local function swrr(instances, prefix)
 
         -- 记录当前服务器的current_weight
         local key = prefix .. '_' .. instances[i].ip
-        global_upstream_wrr_dict[key] = instances[i].current_weight
+        store:safe_set(key, instances[i].current_weight)
     end
 
     local ip = instances[index].ip
     local key = prefix .. '_' .. ip
-    global_upstream_wrr_dict[key] = global_upstream_wrr_dict[key] - sum_weight
+    local val = store:get(key)
+    store:safe_set(key, val - sum_weight)
 
     local ok, err = balancer.set_current_peer(ip, instances[index].port)
     if not ok then
