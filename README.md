@@ -92,7 +92,7 @@ Jinlong Yang
 	if __name__ == '__main__':
 		run_simple('0.0.0.0', 5000, app) 
 
-## 8 平滑加权轮训算法
+## 8 平滑加权轮询算法
 
     -- 初始全局变量保存请求
     upstream_wrr_dict = {}

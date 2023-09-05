@@ -13,7 +13,7 @@ global_route_abclass_prefix = 'ngx_route_abclass_'
 global_retry_prefix = 'ngx_retry_'
 global_gcd_prefix = 'ngx_gcd_'
 
--- 全局变量: 实现平滑加权轮训
+-- 全局变量: 实现平滑加权轮询(worker启动注册全局变量, 不能放在dynamic中, 否则没法起到全局记录)
 global_upstream_wrr_dict = {}
 
 
