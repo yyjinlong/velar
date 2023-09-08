@@ -173,7 +173,9 @@ function _M:update()
 
     local ok, err = ngx.timer.at(1, _M.update)
     if not ok then
-        ngx.log(ngx.ERR, 'create timer failed: ', err)
+        if err ~= 'process exiting' then
+            ngx.log(ngx.ERR, 'create timer failed: ', err)
+        end
     end
 end
 

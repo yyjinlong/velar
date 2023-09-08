@@ -5,6 +5,18 @@ local json = require 'cjson'
 local store = ngx.shared.store
 
 
+local function filter(upstream_name, instances)
+    local new_instances = {}
+    for _, item in pairs(instances) do
+        local key = 'ngx_healthcheck_down_' .. upstream_name .. '_' .. item.ip .. '_' .. item.port
+        local data = store:get(key)
+        if not data then
+            table.insert(new_instances, item)
+        end
+    end
+    return new_instances
+end
+
 -- smooth weighted round robin
 local function swrr(instances, prefix)
     for _, item in pairs(instances) do
@@ -147,6 +159,15 @@ local function router()
     local retry_key = global_retry_prefix .. upstream_name
     local retry_val = store:get(retry_key)
     balancer.set_more_tries(tonumber(retry_val))
+
+    -- positive_check
+    local new_instances = filter(upstream_name, instances)
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' positive check match: ' .. util.dump(new_instances))
+    if #new_instances == 0 then
+        ngx.log(ngx.ERR, 'upstream: ' .. upstream_name .. ' no instances ok, use default instances!!!!')
+    else
+        instances = new_instances
+    end
 
     -- swrr
     swrr(instances, prefix)

@@ -35,6 +35,9 @@ Jinlong Yang
         init_worker_by_lua_block {
             local init = require 'velar.init_timer'
             init.timer()
+
+            local hc = require 'velar.healthcheck'
+            hc.positive_check()
         }
         ....
     }
