@@ -132,14 +132,14 @@ Jinlong Yang
 
 ### 8.1 算法原理
 
-    * 每个服务器都有两个权重变量：
-        * weight: 配置文件中指定的该服务器的权重, 这个值是固定不变的;
-        * current_weight: 服务器目前的权重, 一开始为0, 之后会动态调整;
+    每个服务器都有两个权重变量：
+        weight: 配置文件中指定的该服务器的权重, 这个值是固定不变的;
+        current_weight: 服务器目前的权重, 一开始为0, 之后会动态调整;
 
-    * 每次当请求到来, 选取服务器时, 遍历数组中所有服务器.
-        * 对于每个服务器, 让它的current_weight增加它的weight;
-        * 同时累加所有服务器的weight, 并保存为sum_weight;
+    每次当请求到来, 选取服务器时, 遍历数组中所有服务器.
+        对于每个服务器, 让它的current_weight增加它的weight;
+        同时累加所有服务器的weight, 并保存为sum_weight;
 
-    * 遍历完所有服务器之后, 如果该服务器的current_weight是最大的, 就选择这个服务器处理本次请求.
-    * 最后把选中的服务器的current_weight减去sum_weight.
+    遍历完所有服务器之后, 如果该服务器的current_weight是最大的, 就选择这个服务器处理本次请求.
+    最后把选中的服务器的current_weight减去sum_weight.
 
