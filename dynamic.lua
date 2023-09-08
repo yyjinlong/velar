@@ -14,6 +14,7 @@ local function filter(upstream_name, instances)
             table.insert(new_instances, item)
         end
     end
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' positive check match: ' .. util.dump(new_instances))
     return new_instances
 end
 
@@ -162,7 +163,6 @@ local function router()
 
     -- positive_check
     local new_instances = filter(upstream_name, instances)
-    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' positive check match: ' .. util.dump(new_instances))
     if #new_instances == 0 then
         ngx.log(ngx.ERR, 'upstream: ' .. upstream_name .. ' no instances ok, use default instances!!!!')
     else
