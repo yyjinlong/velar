@@ -44,14 +44,15 @@ Jinlong Yang
 
 ## 4 lualib路径
 
-	lualib
-	└── velar
-		├── dynamic.lua
-		├── init_check.lua
-		├── init_timer.lua
-		└── util
-			├── qconf.lua
-			└── util.lua
+    lualib
+    └── velar
+        ├── dynamic.lua
+        ├── healthcheck.lua
+        ├── init_check.lua
+        ├── init_timer.lua
+        └── util
+            ├── qconf.lua
+            └── util.lua
 
     init_by_lua:
     * nginx启动时, 从qconf读取所有配置, 进行配置检查
@@ -63,10 +64,12 @@ Jinlong Yang
     balancer_by_lua_file:
     * 获取当前访问的upstream、idc、pubenv、abclass, 从共享内存获取实例信息, 进行路由逐层匹配, 最后经过wrr返回最终的实例
 
+    healthcheck: 按需启动对配置的检查
+
 
 ## 5 qconf zk配置
 
-	set /nginx/ops/http/cdc '{"service_name": "com.ops.http.cdc", "service_default_port": "5000", "service_connect_retry": 1, "service_timestamp": 1681819575, "service_route_rule": {"route": ["pubenv", "idc", "abclass"], "route_rule": {"pubenv": {"1": "sandbox", "2": "smallflow", "default": "default"}, "idc": {"dx": "dx", "m6": "m6", "default": "dx"}, "abclass": {"0-10": "seta", "11-100": "setb", "default": "setb"}}}, "service_instances": [{"idc": "dx", "hostname": "dx-ops00.dx", "ip": "10.12.20.189", "port": "", "pubenv": "sandbox", "weight": 1, "abclass": "default"}, {"idc": "m6", "hostname": "dx-ops01.dx", "ip": "10.12.20.41", "port": "", "pubenv": "smallflow", "weight": 1, "abclass": "seta"}, {"idc": "m6", "hostname": "dx-ops02.dx", "ip": "10.12.16.250", "port": "", "pubenv": "default", "weight": 2, "abclass": "setb"}, {"idc": "m6", "hostname": "dx-ops03.dx", "ip": "10.12.25.0", "port": "", "pubenv": "default", "weight": 4, "abclass": "setb"}]}'
+	set /nginx/ops/http/cdc '{"service_name": "com.ops.http.cdc", "service_default_port": "5000", "service_connect_retry": 1, "service_timestamp": 1681819575, "service_check_enabled": "yes", "service_check_method": "tcp", "service_check_url": "", "service_check_header": "", "service_check_interval": 1, "service_check_window": 3, "service_route_rule": {"route": ["pubenv", "idc", "abclass"], "route_rule": {"pubenv": {"1": "sandbox", "2": "smallflow", "default": "default"}, "idc": {"dx": "dx", "m6": "m6", "default": "dx"}, "abclass": {"0-10": "seta", "11-100": "setb", "default": "setb"}}}, "service_instances": [{"idc": "dx", "hostname": "dx-ops00.dx", "ip": "10.12.20.189", "port": "", "pubenv": "sandbox", "weight": 1, "abclass": "default"}, {"idc": "m6", "hostname": "dx-ops01.dx", "ip": "10.12.20.41", "port": "", "pubenv": "smallflow", "weight": 1, "abclass": "seta"}, {"idc": "m6", "hostname": "dx-ops02.dx", "ip": "10.12.16.250", "port": "", "pubenv": "default", "weight": 2, "abclass": "setb"}, {"idc": "m6", "hostname": "dx-ops03.dx", "ip": "10.12.25.0", "port": "", "pubenv": "default", "weight": 4, "abclass": "setb"}]}'
 
 ## 6 测试
 
