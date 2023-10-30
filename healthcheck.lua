@@ -12,8 +12,8 @@ local ceil = math.ceil
 local spawn = ngx.thread.spawn
 local wait = ngx.thread.wait
 local pcall = pcall
-local cjson = require('cjson.safe')
 local upstream = require 'ngx.upstream'
+local cjson = require('cjson.safe')
 local dict = ngx.shared.store
 
 local ok, new_tab = pcall(require, "table.new")
@@ -190,6 +190,7 @@ local function check_peer(ctx, id, peer)
 
     sock:settimeout(ctx.timeout)
 
+    -- 默认4层端口探测
     ok, err = sock:connect(peer.ip, peer.port)
     if not ok then
         return peer_warn(ctx, id, peer, "failed to connect to ", peer.ip,":" ,peer.port, ": ", err)
@@ -201,33 +202,36 @@ local function check_peer(ctx, id, peer)
                           "failed to send request to ", peer.ip,":",peer.port, ": ", err)
     end
 
-    local status_line, err = sock:receive()
-    if not status_line then
-        peer_warn(ctx, id, peer, "failed to receive status line from ", peer.ip, ":" ,peer.port, ": ", err)
-        if err == "timeout" then
-            sock:close()  -- timeout errors do not close the socket.
-        end
-        return
-    end
-
-    if statuses then
-        local from, to, err = re_find(status_line,
-                                      [[^HTTP/\d+\.\d+\s+(\d+)]],
-                                      "joi", nil, 1)
-        if not from then
-            peer_warn(ctx, id, peer,
-                       "bad status line from ", peer.ip,":",peer.port, ": ",
-                       status_line)
-            sock:close()
+    -- 接口探测
+    if ctx.check_method == 'api' then
+        local status_line, err = sock:receive()
+        if not status_line then
+            peer_warn(ctx, id, peer, "failed to receive status line from ", peer.ip, ":" ,peer.port, ": ", err)
+            if err == "timeout" then
+                sock:close()  -- timeout errors do not close the socket.
+            end
             return
         end
 
-        local status = tonumber(sub(status_line, from, to))
-        if not statuses[status] then
-            peer_warn(ctx, id, peer, "bad status code from ",
-                       peer.ip,":",peer.port, ": ", status)
-            sock:close()
-            return
+        if statuses then
+            local from, to, err = re_find(status_line,
+                                          [[^HTTP/\d+\.\d+\s+(\d+)]],
+                                          "joi", nil, 1)
+            if not from then
+                peer_warn(ctx, id, peer,
+                           "bad status line from ", peer.ip,":",peer.port, ": ",
+                           status_line)
+                sock:close()
+                return
+            end
+
+            local status = tonumber(sub(status_line, from, to))
+            if not statuses[status] then
+                peer_warn(ctx, id, peer, "bad status code from ",
+                           peer.ip,":",peer.port, ": ", status)
+                sock:close()
+                return
+            end
         end
     end
 
@@ -363,61 +367,35 @@ local function do_check(ctx)
     end
 end
 
-local check
-check = function(premature, ctx)
-    if premature then
+local function check(upstream_name, data)
+    local config = cjson.decode(data)
+    if config == nil then
+        error('upstream: ' .. upstream_name .. ' get conf data not json!')
+    end
+
+    if not config.service_check_enabled then
+        return
+    end
+    if config.service_check_enabled == 'no' then
         return
     end
 
-    local ok, err = pcall(do_check, ctx)
-    if not ok then
-        errlog("failed to run healthcheck cycle: ", err)
-    end
-
-    local ok, err = new_timer(ctx.interval, check, ctx)
-    if not ok then
-        if err ~= "process exiting" then
-            errlog("failed to create timer: ", err)
-        end
-        return
-    end
-end
-
-local _M = {}
-
--- 生成检测器
-_M.spawn_checker = function(opts)
-    local typ = opts.type
-    if not typ then
-        return nil, "\"type\" option required"
-    end
-
-    if typ ~= "http" then
-        return nil, "only \"http\" type is supported right now"
-    end
-
-    local http_req = opts.http_req
-    if not http_req then
-        return nil, "\"http_req\" option required"
-    end
-
-    local timeout = opts.timeout
-    if not timeout then
-        timeout = 1000
-    end
-
-    local interval = opts.interval
-    if not interval then
-        interval = 1
-
-    else
-        interval = interval / 1000
-        if interval < 1 then  -- minimum 1s
-            interval = 1
+    -- 默认检查接口
+    local http_req = 'GET / HTTP/1.1\r\n\r\n'
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' enable healthcheck')
+    if config.service_check_method == 'api' then
+        if not config.service_check_header then
+            http_req = 'GET ' .. config.service_check_url .. ' HTTP/1.1\r\n\r\n'
+        else
+            http_req = 'GET ' .. config.service_check_url .. ' HTTP/1.1\r\nHost: ' .. config.service_check_header .. '\r\n\r\n'
         end
     end
 
-    local valid_statuses = opts.valid_statuses
+    -- 超时时间
+    local timeout = 1000
+
+    -- 校验返回错误码
+    local valid_statuses = {200, 201, 302}
     local statuses
     if valid_statuses then
         statuses = new_tab(0, #valid_statuses)
@@ -427,33 +405,26 @@ _M.spawn_checker = function(opts)
         end
     end
 
-    local concur = opts.concurrency
-    if not concur then
-        concur = 1
-    end
-
-    local fall = opts.fall
-    if not fall then
-        fall = 5
-    end
-
-    local rise = opts.rise
-    if not rise then
-        rise = 2
-    end
-
-    local u = opts.upstream
-    if not u then
-        return nil, "no upstream specified"
-    end
-
-    local ppeers = get_primary_peers(u)
+    -- 获取upstream中的ip
+    local ppeers = get_primary_peers(upstream_name)
     if not ppeers then
-        return nil, "failed to get primary peers "
+        return
     end
+
+    -- 并发数
+    local concur = 1
+
+    -- 健康探测的时间间隔
+    local interval = config.service_check_interval
+
+    -- 对DOWN的设备，连续rise次成功，认定为UP
+    local rise = 2
+
+    -- 对UP的设备，连续fall次失败，认定为DOWN
+    local fall = config.service_check_window
 
     local ctx = {
-        upstream = u,
+        upstream = upstream_name,
         primary_peers = ppeers,
         http_req = http_req,
         timeout = timeout,
@@ -462,38 +433,46 @@ _M.spawn_checker = function(opts)
         rise = rise,
         statuses = statuses,
         concurrency = concur,
+        check_method = config.service_check_method,
     }
 
-    local ok, err = new_timer(0, check, ctx)
+    local ok, err = pcall(do_check, ctx)
     if not ok then
-        return nil, "failed to create timer: " .. err
+        errlog("failed to run healthcheck cycle: ", err)
     end
-
-    return true
 end
 
--- _M.spawn_checker({
---         upstream = "nginx.http.nova",
---         type = "http",
---         http_req = "GET /status HTTP/1.0\r\n\r\n",
---         interval = 500,  -- 100ms
---         valid_statuses = {200},
---         fall = 2,
---     })
+local _M = {}
 
--- 正向检查
+-- 正向检查(仅支持http)
 _M.positive_check = function()
+    local ok, qconf = pcall(require, 'velar.util.qconf')
+    if not ok then
+        ngx.log(ngx.ERR, 'import qconf error')
+        return
+    end
+
     local upstream_list = upstream.get_upstreams()
     for _, upstream_name in pairs(upstream_list) do
         if string.sub(upstream_name, 1, 6) == 'nginx.' then
-            local http_req = 'GET / HTTP/1.1\r\n\r\n'
-            local data = {
-                upstream=upstream_name,
-                type='http',
-                http_req = http_req,
-            }
-            _M.spawn_checker(data)
+            local path, _ = string.gsub(upstream_name, '[.]', '/')
+            local conf_key = '/' .. path
+            local err, conf = qconf.get_conf(conf_key)
+            if err ~= 0 then
+                ngx.log(ngx.ERR, 'upstream: ' .. upstream_name ..' qconf get conf ' .. path ..' error: ', err)
+                return ''
+            end
+            --ngx.log(ngx.ERR, '--check upstream: ' .. upstream_name .. ' get conf: ' .. conf)
+            check(upstream_name, conf)
         end
+    end
+
+    local ok, err = new_timer(1, _M.positive_check)
+    if not ok then
+        if err ~= "process exiting" then
+            errlog("failed to create timer: ", err)
+        end
+        return
     end
 end
 
