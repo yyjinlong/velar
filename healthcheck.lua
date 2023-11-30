@@ -445,7 +445,7 @@ end
 local _M = {}
 
 -- 正向检查(仅支持http)
-_M.positive_check = function()
+_M.spawn_check = function()
     local ok, qconf = pcall(require, 'velar.util.qconf')
     if not ok then
         ngx.log(ngx.ERR, 'import qconf error')
@@ -467,12 +467,20 @@ _M.positive_check = function()
         end
     end
 
-    local ok, err = new_timer(1, _M.positive_check)
+    local ok, err = new_timer(1, _M.spawn_check)
     if not ok then
         if err ~= "process exiting" then
             errlog("failed to create timer: ", err)
         end
         return
+    end
+end
+
+-- 正向检查(仅支持http)
+_M.positive_check = function()
+    if ngx.worker.id() == 1 then
+        _M.spawn_check()
+        ngx.log(ngx.INFO, 'create healthcheck success for worker 1')
     end
 end
 
