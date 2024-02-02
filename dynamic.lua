@@ -4,6 +4,27 @@ local util = require 'velar.util.util'
 local json = require 'cjson'
 local store = ngx.shared.store
 
+local function retry_filter(instances)
+    if type(ngx.ctx.used_instances) == 'nil' or type(instances) == 'nil' then
+        return instances
+    end
+    ngx.log(ngx.ERR, '---------INFO------ current request context is retrying')
+    local new_instances = {}
+    for _, item in pairs(instances) do
+        local ok = true
+        for _, ui in pairs(ngx.ctx.used_instances) do
+            if item.ip .. ':' .. tostring(item.port) == ui then
+                ok = false
+                break
+            end
+        end
+        if ok then
+            -- 重试其他实例上
+            table.insert(new_instances, item)
+        end
+    end
+    return new_instances
+end
 
 local function filter(upstream_name, instances)
     local new_instances = {}
@@ -20,41 +41,42 @@ end
 
 -- smooth weighted round robin
 local function swrr(instances, prefix)
+    -- 填充current_weight字段
     for _, item in pairs(instances) do
         local key = prefix .. '_' .. item.ip
         local current_weight = store:get(key)
         if not current_weight then
             current_weight = 0
         end
-        -- 填充current_weight字段
         item.current_weight = current_weight
     end
+    ngx.log(ngx.DEBUG, 'swrr init instance: ' .. json.encode(instances))
 
-    local index = 0      -- 请求到来选择服务器的索引
-    local sum_weight = 0 -- 累加所有服务器的权重
-    for i=1, #instances do
-        instances[i].current_weight = instances[i].current_weight + instances[i].weight
-        sum_weight = sum_weight + instances[i].weight
+    -- swrr
+    local selected_instance = nil   -- 请求到来时, 被选择的实例
+    local sum_weight = 0            -- 累加所有服务器的权重
+    for _, item in pairs(instances) do
+        sum_weight = sum_weight + item.weight
+        item.current_weight = item.current_weight + item.weight
 
-        if index == 0 or instances[index].current_weight < instances[i].current_weight then
-            index = i
+        if not selected_instance or item.current_weight > selected_instance.current_weight then
+            selected_instance = item
         end
 
         -- 记录当前服务器的current_weight
-        local key = prefix .. '_' .. instances[i].ip
-        store:safe_set(key, instances[i].current_weight)
+        local key = prefix .. '_' .. item.ip
+        store:set(key, item.current_weight)
     end
 
-    local ip = instances[index].ip
-    local key = prefix .. '_' .. ip
-    local val = store:get(key)
-    store:safe_set(key, val - sum_weight)
-
-    local ok, err = balancer.set_current_peer(ip, instances[index].port)
-    if not ok then
-        ngx.log(ngx.ERR, 'upstream failed to set current peer: ', err)
+    if selected_instance ~= nil then
+        selected_instance.current_weight = selected_instance.current_weight - sum_weight
+        local key = prefix .. '_' .. selected_instance.ip
+        store:set(key, selected_instance.current_weight)
+    else
+        ngx.log(ngx.ERR, '------INFO------ upstream: ' .. upstream_name .. ' swrr triger baseline return index==0')
+        selected_instance = instances[0]
     end
-    ngx.log(ngx.DEBUG, 'smooth weighted round robin select: ' .. ip)
+    return selected_instance
 end
 
 
@@ -156,12 +178,20 @@ local function router()
     end
     ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' get match instance: ' .. util.dump(instances))
 
-    -- retry
-    local retry_key = global_retry_prefix .. upstream_name
-    local retry_val = store:get(retry_key)
-    balancer.set_more_tries(tonumber(retry_val))
+    -- 重试检测
+    if not instances or type(ngx.ctx.used_instances) ~= 'nil' then
+        if type(ngx.ctx.used_instances) == 'table' then
+            local other_instances = retry_filter(instances)
+            if #other_instances ~= 0 then
+                instances = other_instances
+                ngx.log(ngx.DEBUG, 'after retry filter use instances: ' .. json.encode(other_instances))
+            else
+                ngx.log(ngx.DEBUG, 'after retry filter use default instances')
+            end
+        end
+    end
 
-    -- positive_check
+    -- 正向监测
     local new_instances = filter(upstream_name, instances)
     if #new_instances == 0 then
         ngx.log(ngx.ERR, 'upstream: ' .. upstream_name .. ' no instances ok, use default instances!!!!')
@@ -169,8 +199,26 @@ local function router()
         instances = new_instances
     end
 
+    -- retry
+    local retry_key = global_retry_prefix .. upstream_name
+    local retry_val = store:get(retry_key)
+    if not ngx.ctx.used_instances then
+        balancer.set_more_tries(tonumber(retry_val))
+    end
+
     -- swrr
-    swrr(instances, prefix)
+    selected_instance = swrr(instances, prefix)
+    local ok, err = balancer.set_current_peer(selected_instance.ip, selected_instance.port)
+    if not ok then
+        ngx.log(ngx.ERR, 'upstream: ' .. upstream_name .. ' failed to set current peer: ', err)
+    end
+    ngx.log(ngx.DEBUG, 'upstream: ' .. upstream_name .. ' select: ' .. selected_instance.ip .. ':' .. selected_instance.port)
+
+    -- 上下文
+    if type(ngx.ctx.used_instances) == 'nil' then
+        ngx.ctx.used_instances = {}
+    end
+    table.insert(ngx.ctx.used_instances, selected_instance.ip .. ':' .. tostring(selected_instance.port))
 end
 
 local function except()
