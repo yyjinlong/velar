@@ -40,7 +40,7 @@ local function filter(upstream_name, instances)
 end
 
 -- smooth weighted round robin
-local function swrr(instances, prefix)
+local function smooth_weighted_round_robin(instances, prefix)
     -- 填充current_weight字段
     for _, item in pairs(instances) do
         local key = prefix .. '_' .. item.ip
@@ -207,7 +207,7 @@ local function router()
     end
 
     -- swrr
-    selected_instance = swrr(instances, prefix)
+    local selected_instance = smooth_weighted_round_robin(instances, prefix)
     local ok, err = balancer.set_current_peer(selected_instance.ip, selected_instance.port)
     if not ok then
         ngx.log(ngx.ERR, 'upstream: ' .. upstream_name .. ' failed to set current peer: ', err)
