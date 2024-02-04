@@ -79,7 +79,6 @@ local function smooth_weighted_round_robin(instances, prefix)
     return selected_instance
 end
 
-
 local function slow_match(upstream_name, route_priorities, access_info)
     --
     -- 根据路由标签顺序逐层匹配
